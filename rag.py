@@ -27,17 +27,19 @@ def retrieve(query, top_k=3):
 class KnowledgeBase:
     def __init__(self, path):
         self.db=sqlite3.connect(path,check_same_thread=False)
-        self.db.execute("CREATE TABLE IF NOT EXISTS chunks(source TEXT, text TEXT, UNIQUE(source,text))")
-        self.db.executemany("INSERT OR IGNORE INTO chunks VALUES(?,?)",POLICIES); self.db.commit()
-    def add(self,source,text):
+        self.db.execute("CREATE TABLE IF NOT EXISTS chunks(source TEXT, text TEXT, tenant_id TEXT NOT NULL DEFAULT 'shared', UNIQUE(source,text,tenant_id))")
+        columns={row[1] for row in self.db.execute("PRAGMA table_info(chunks)")}
+        if "tenant_id" not in columns: self.db.execute("ALTER TABLE chunks ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'shared'")
+        self.db.executemany("INSERT OR IGNORE INTO chunks(source,text,tenant_id) VALUES(?,?,'shared')",POLICIES); self.db.commit()
+    def add(self,source,text,tenant_id="shared"):
         clean=" ".join(text.split())
         if not source.strip() or not clean:return 0
         before=self.db.total_changes
-        self.db.executemany("INSERT OR IGNORE INTO chunks VALUES(?,?)",[(source,clean[i:i+700]) for i in range(0,len(clean),700)])
+        self.db.executemany("INSERT OR IGNORE INTO chunks(source,text,tenant_id) VALUES(?,?,?)",[(source,clean[i:i+700],tenant_id) for i in range(0,len(clean),700)])
         self.db.commit();return self.db.total_changes-before
-    def search(self,query,top_k=3):
+    def search(self,query,top_k=3,tenant_id="shared"):
         q=Counter(_words(query)); hits=[]
-        for name,text in self.db.execute("SELECT source,text FROM chunks"):
+        for name,text in self.db.execute("SELECT source,text FROM chunks WHERE tenant_id IN (?, 'shared')",(tenant_id,)):
             d=Counter(_words(text)); dot=sum(q[x]*d[x] for x in q.keys()&d.keys()); score=dot/math.sqrt(sum(x*x for x in q.values())*sum(x*x for x in d.values())) if q and d else 0
             if score:hits.append((name,text,score))
         return sorted(hits,key=lambda x:x[2],reverse=True)[:top_k]
