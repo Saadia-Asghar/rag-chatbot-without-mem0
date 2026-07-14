@@ -3,6 +3,7 @@ from pathlib import Path
 import streamlit as st
 
 from history import History
+from kb_ingestion import IngestionError, pdf_text, webpage_text
 from llm_service import generate_answer
 from rag import KnowledgeBase
 
@@ -40,6 +41,22 @@ with st.sidebar:
     if st.button("Index knowledge document"):
         added = st.session_state.kb.add(source, text, tenant)
         st.success(f"Indexed {added} new chunks for {tenant}.")
+    uploaded_pdf = st.file_uploader("Upload PDF knowledge document", type=["pdf"])
+    if st.button("Index uploaded PDF"):
+        try:
+            if uploaded_pdf is None:
+                raise IngestionError("Choose a PDF first.")
+            added = st.session_state.kb.add(uploaded_pdf.name, pdf_text(uploaded_pdf.getvalue()), tenant)
+            st.success(f"Indexed {added} PDF chunks for {tenant}.")
+        except IngestionError as error:
+            st.error(str(error))
+    kb_url = st.text_input("Public website link", placeholder="https://example.com/support")
+    if st.button("Index website link"):
+        try:
+            added = st.session_state.kb.add(kb_url, webpage_text(kb_url), tenant)
+            st.success(f"Indexed {added} website chunks for {tenant}.")
+        except IngestionError as error:
+            st.error(str(error))
     st.caption("The KB is filtered by workspace. This demo has no personal-memory lookup.")
 
 if not st.session_state.chat:
@@ -50,7 +67,11 @@ history, chat, user = st.session_state.history, st.session_state.chat, st.sessio
 st.info(f"Workspace: **{st.session_state.tenant}**  |  Department: **{st.session_state.department}**  |  Customer: **{user}**")
 
 for role, text, _ in history.messages(chat):
-    with st.chat_message(role):
+    display_role = role if role in {"user", "assistant"} else "assistant"
+    avatar = "👤" if role == "agent" else None
+    with st.chat_message(display_role, avatar=avatar):
+        if role == "agent":
+            st.caption("Human agent")
         st.write(text)
 
 question = st.chat_input("Example: I was charged twice for my bill")
@@ -68,9 +89,22 @@ if col2.button("End session and prepare context"):
     st.session_state.escalated = True
 if st.session_state.get("escalated"):
     st.warning("Current-session handoff packet ready. It is not saved as long-term memory.")
-    packet = history.handoff(chat, user)
+    packet = history.handoff(chat, user, st.session_state.tenant)
     history.save_session_evidence(chat, user, st.session_state.tenant, packet)
-    st.text_area("Human-agent context", packet, height=320)
+    bot_column, agent_column = st.columns(2)
+    with bot_column:
+        st.subheader("Bot outcome")
+        st.write("The bot has stopped and transferred the case with the specific summary shown to the agent.")
+        st.caption("The current chat and handoff packet are retained in SQLite only.")
+    with agent_column:
+        st.subheader("Human Agent Inbox")
+        st.caption("This is the exact context delivered at escalation.")
+        st.text_area("Specific handoff summary", packet, height=330, key="agent_packet")
+        agent_reply = st.text_input("Human agent reply to customer", key="agent_reply")
+        if st.button("Send human-agent reply", key="send_agent_reply") and agent_reply.strip():
+            history.add(chat, "agent", agent_reply.strip())
+            st.success("Human-agent reply added to the case transcript.")
+            st.rerun()
 
 with st.expander("Persistent demo evidence (SQLite)"):
     st.caption("Each completed session retains its full transcript in messages and its final handoff packet in session_evidence.")

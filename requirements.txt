@@ -1,3 +1,4 @@
 streamlit>=1.36
 ollama>=0.6.0
 pytest>=8.0
+pypdf>=5.0.0

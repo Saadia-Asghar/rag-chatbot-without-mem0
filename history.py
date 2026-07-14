@@ -22,9 +22,28 @@ class History:
         self.db.execute("INSERT INTO messages(chat_id,role,text,created) VALUES(?,?,?,?)", (chat_id, role, text, datetime.now(timezone.utc).isoformat()))
         self.db.commit()
     def messages(self, chat_id): return self.db.execute("SELECT role,text,created FROM messages WHERE chat_id=? ORDER BY id", (chat_id,)).fetchall()
-    def handoff(self, chat_id, user_id):
-        transcript = "\n".join(f"[{at}] {role.upper()}: {text}" for role,text,at in self.messages(chat_id))
-        return f"HUMAN HANDOFF\nCustomer: {user_id}\nMode: RAG-only (no long-term user memory)\n\nFULL TRANSCRIPT\n{transcript}"
+    def handoff(self, chat_id, user_id, workspace_id="unknown"):
+        """Create the agent-facing case packet from the current conversation only."""
+        messages = self.messages(chat_id)
+        customer_messages = [text for role, text, _ in messages if role == "user"]
+        bot_messages = [text for role, text, _ in messages if role == "assistant"]
+        latest_customer = customer_messages[-1] if customer_messages else "No customer request captured."
+        facts = " | ".join(customer_messages[-3:]) or "No facts captured."
+        bot_attempt = bot_messages[-1] if bot_messages else "No bot response captured."
+        transcript = "\n".join(f"[{at}] {role.upper()}: {text}" for role, text, at in messages)
+        return (
+            "HUMAN HANDOFF SUMMARY\n"
+            f"Workspace: {workspace_id}\n"
+            f"Customer: {user_id}\n"
+            "Mode: RAG-only baseline (no long-term customer memory)\n"
+            "Unresolved: Needs human review\n"
+            f"Customer goal / latest need: {latest_customer}\n"
+            f"Facts supplied by customer: {facts}\n"
+            f"What the bot last tried: {bot_attempt}\n"
+            "Relevant prior memory: None — this baseline starts each new session without personal history.\n"
+            "Escalation reason: The request needs human review or the customer asked for an agent.\n\n"
+            "FULL TRANSCRIPT\n" + transcript
+        )
     def save_session_evidence(self, chat_id, user_id, workspace_id, handoff_summary):
         self.db.execute("""
             INSERT INTO session_evidence(chat_id,user_id,workspace_id,completed_at,handoff_summary,memory_status)
