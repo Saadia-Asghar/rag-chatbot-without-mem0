@@ -77,10 +77,19 @@ for role, text, _ in history.messages(chat):
 question = st.chat_input("Example: I was charged twice for my bill")
 if question:
     hits = st.session_state.kb.search(question, tenant_id=st.session_state.tenant)
+    st.session_state.last_rag_retrieval = [(source, round(score, 3)) for source, _, score in hits]
     answer = generate_answer(question, hits)
     history.add(chat, "user", question)
     history.add(chat, "assistant", answer)
     st.rerun()
+
+with st.expander("Last RAG retrieval (test evidence)"):
+    st.caption("Hybrid score = 75% local embedding similarity + 25% keyword similarity. Results are workspace filtered.")
+    retrieved = st.session_state.get("last_rag_retrieval", [])
+    if retrieved:
+        st.dataframe(retrieved, column_config={0: "Knowledge source", 1: "Hybrid score"}, hide_index=True, use_container_width=True)
+    else:
+        st.info("Ask a question to see the retrieved knowledge chunks.")
 
 col1, col2 = st.columns(2)
 if col1.button("Escalate to human agent", type="primary"):
