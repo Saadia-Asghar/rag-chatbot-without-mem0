@@ -57,6 +57,10 @@ Do not use one unfiltered Pinecone index for every enterprise client’s documen
 - Send only the top three chunks to the answer LLM.
 - Build the human handoff deterministically from SQLite; it requires no additional LLM call.
 
+### Local performance behaviour
+
+On a CPU-only laptop, local embeddings can take several seconds for a new semantic query. The demo therefore uses a keyword-first cascade: clear policy-term matches return immediately; only weak/ambiguous wording uses a cached semantic embedding lookup. Duplicate-charge questions use a deterministic safe workflow and skip both the embedding and answer-LLM call. Open-ended answers are limited to two context chunks and 80 generated tokens, and Ollama keeps the answer model warm for 20 minutes.
+
 ## Three public tenant test sources
 
 The sidebar button **Load 3 public tenant demo sources** loads these single, public pages into separate workspaces:

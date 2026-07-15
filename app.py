@@ -5,7 +5,7 @@ import streamlit as st
 from guardrails import block_reason
 from history import History
 from kb_ingestion import IngestionError, pdf_text, webpage_text
-from llm_service import generate_answer
+from llm_service import fast_policy_answer, generate_answer
 from rag import KnowledgeBase
 
 ROOT = Path(__file__).parent
@@ -91,9 +91,11 @@ for role, text, _ in history.messages(chat):
 question = st.chat_input("Example: I was charged twice for my bill")
 if question:
     blocked = block_reason(question)
-    hits = st.session_state.kb.search(question, tenant_id=st.session_state.tenant) if not blocked else []
-    st.session_state.last_rag_retrieval = [(source, round(score, 3)) for source, _, score in hits]
-    answer = blocked or generate_answer(question, hits)
+    fast_answer = fast_policy_answer(question) if not blocked else None
+    hits = st.session_state.kb.search(question, tenant_id=st.session_state.tenant) if not blocked and not fast_answer else []
+    st.session_state.last_rag_retrieval = ([(source, round(score, 3)) for source, _, score in hits] if not fast_answer
+                                            else [("Fast duplicate-charge workflow (no embedding/LLM call)", 1.0)])
+    answer = blocked or fast_answer or generate_answer(question, hits)
     history.add(chat, "user", question)
     history.add(chat, "assistant", answer)
     st.rerun()

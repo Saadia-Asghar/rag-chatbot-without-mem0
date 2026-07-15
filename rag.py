@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 from collections import Counter
+from functools import lru_cache
 
 
 POLICIES = [
@@ -35,6 +36,8 @@ def _cosine(left, right):
 
 
 def _embed(texts):
+    if not texts:
+        return []
     try:
         from ollama import Client
         response = Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).embed(
@@ -43,6 +46,12 @@ def _embed(texts):
         return [[float(value) for value in vector] for vector in response["embeddings"]]
     except Exception:
         return []
+
+
+@lru_cache(maxsize=256)
+def _cached_query_embedding(query):
+    vectors = _embed([query])
+    return tuple(vectors[0]) if len(vectors) == 1 else ()
 
 
 def retrieve(query, top_k=3):
@@ -88,10 +97,13 @@ class KnowledgeBase:
         if not query.strip() or top_k <= 0:
             return []
         self._backfill()
-        vectors = _embed([query])
-        query_vector = vectors[0] if len(vectors) == 1 else []
+        rows = self.db.execute("SELECT source,text,embedding_json FROM chunks WHERE tenant_id IN (?, 'shared')", (tenant_id,)).fetchall()
+        keyword_hits = [(name, text, _keyword_score(query, text)) for name, text, _ in rows]
+        if keyword_hits and max(hit[2] for hit in keyword_hits) >= .05:
+            return [hit for hit in sorted(keyword_hits, key=lambda item: item[2], reverse=True) if hit[2] > 0][:top_k]
+        query_vector = list(_cached_query_embedding(query))
         hits = []
-        for name, text, raw_vector in self.db.execute("SELECT source,text,embedding_json FROM chunks WHERE tenant_id IN (?, 'shared')", (tenant_id,)):
+        for name, text, raw_vector in rows:
             keyword = _keyword_score(query, text)
             try:
                 semantic = _cosine(query_vector, json.loads(raw_vector)) if query_vector and raw_vector else 0.0
