@@ -2,6 +2,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from guardrails import block_reason
 from history import History
 from kb_ingestion import IngestionError, pdf_text, webpage_text
 from llm_service import generate_answer
@@ -89,9 +90,10 @@ for role, text, _ in history.messages(chat):
 
 question = st.chat_input("Example: I was charged twice for my bill")
 if question:
-    hits = st.session_state.kb.search(question, tenant_id=st.session_state.tenant)
+    blocked = block_reason(question)
+    hits = st.session_state.kb.search(question, tenant_id=st.session_state.tenant) if not blocked else []
     st.session_state.last_rag_retrieval = [(source, round(score, 3)) for source, _, score in hits]
-    answer = generate_answer(question, hits)
+    answer = blocked or generate_answer(question, hits)
     history.add(chat, "user", question)
     history.add(chat, "assistant", answer)
     st.rerun()
