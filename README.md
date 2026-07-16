@@ -1,7 +1,5 @@
 # RAG-only support bot (no Mem0)
 
-**New to RAG?** Read [LEARNING_GUIDE.md](LEARNING_GUIDE.md), then use this repository as the no-long-term-memory comparison demo.
-
 This is the baseline for comparing against [rag-chatbot](https://github.com/Saadia-Asghar/rag-chatbot).
 
 | Capability | This repository | With-Mem0 repository |
