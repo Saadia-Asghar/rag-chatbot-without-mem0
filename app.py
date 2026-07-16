@@ -96,6 +96,9 @@ if question:
     st.session_state.last_rag_retrieval = ([(source, round(score, 3)) for source, _, score in hits] if not fast_answer
                                             else [("Fast duplicate-charge workflow (no embedding/LLM call)", 1.0)])
     answer = blocked or fast_answer or generate_answer(question, hits)
+    if hits and not blocked and not fast_answer:
+        sources = ", ".join(dict.fromkeys(source for source, _, _ in hits))
+        answer += f"\n\nSources used: {sources}"
     history.add(chat, "user", question)
     history.add(chat, "assistant", answer)
     st.rerun()
